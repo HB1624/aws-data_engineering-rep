@@ -1,0 +1,2 @@
+The repo contains aws notes and other python codes.
+Rep used to learn about AWS; github and other useful data engineer services
