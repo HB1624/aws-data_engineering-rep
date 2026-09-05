@@ -1,0 +1,42 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "FunctionName",
+    "ParameterValue": "PR_capa_graph_analytics.py"
+  },
+  {
+    "ParameterKey": "Runtime",
+    "ParameterValue": "python3.12"
+  },
+  {
+    "ParameterKey": "Handler",
+    "ParameterValue": "graph_analytics_lambda.handler"
+  },
+  {
+    "ParameterKey": "MemorySize",
+    "ParameterValue": "256"
+  },
+  {
+    "ParameterKey": "Timeout",
+    "ParameterValue": "30"
+  },
+  {
+    "ParameterKey": "LogRetentionInDays",
+    "ParameterValue": "14"
+  },
+  {
+    "ParameterKey": "CodeS3Bucket",
+    "ParameterValue": "prtestrvw0011617capa"
+  },
+  {
+    "ParameterKey": "CodeS3Key",
+    "ParameterValue": "_deploy/PR_capa_graph_analytics/lambda.zip"
+  },
+  {
+    "ParameterKey": "ExtraManagedPolicyArns",
+    "ParameterValue": ""
+  }
+]

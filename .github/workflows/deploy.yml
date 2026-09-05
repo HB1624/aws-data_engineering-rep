@@ -1,0 +1,83 @@
+name: Deploy Lambda via CloudFormation
+
+# dev and qa branches are for code review / promotion only — they do NOT
+# trigger a deploy. Only main deploys, since there's a single AWS environment.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}   # allows manual "Run workflow" from the Actions tab if needed
+
+permissions:
+  id-token: write   # required for OIDC -> AWS role assumption
+  contents: read
+
+env:
+  STACK_NAME: pipeline-pr-capa-analytics-main
+  PARAMS_FILE: params.prod.json
+  TEMPLATE_FILE: template.yaml
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Optional: gives you a manual-approval gate + deployment history in the
+    # GitHub UI. Create a "production" environment under Settings > Environments
+    # if you want required reviewers before this job runs. Safe to leave as-is
+    # if you don't need approvals.
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Package Lambda source
+        run: |
+          mkdir -p build
+          cp -r PR_Review_Lambda/* build/
+          # If you have dependencies, install them into build/ before zipping:
+          # pip install -r requirements.txt -t build/
+          cd build && zip -r ../lambda.zip . -x "*.pyc" && cd ..
+
+      - name: Read S3 target from parameters file
+        id: s3target
+        run: |
+          BUCKET=$(python3 -c "import json;print([p['ParameterValue'] for p in json.load(open('${{ env.PARAMS_FILE }}')) if p['ParameterKey']=='CodeS3Bucket'][0])")
+          KEY=$(python3 -c "import json;print([p['ParameterValue'] for p in json.load(open('${{ env.PARAMS_FILE }}')) if p['ParameterKey']=='CodeS3Key'][0])")
+          echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
+          echo "key=$KEY" >> $GITHUB_OUTPUT
+
+      - name: Upload package to S3
+        run: |
+          aws s3 cp lambda.zip s3://${{ steps.s3target.outputs.bucket }}/${{ steps.s3target.outputs.key }}
+
+      - name: Deploy CloudFormation stack
+        run: |
+          PARAM_OVERRIDES=$(python3 -c "
+          import json
+          params = json.load(open('${{ env.PARAMS_FILE }}'))
+          print(' '.join(f\"{p['ParameterKey']}={p['ParameterValue']}\" for p in params))
+          ")
+          aws cloudformation deploy \
+            --stack-name ${{ env.STACK_NAME }} \
+            --template-file ${{ env.TEMPLATE_FILE }} \
+            --parameter-overrides $PARAM_OVERRIDES \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+
+      - name: Show stack outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --query "Stacks[0].Outputs" \
+            --output table
