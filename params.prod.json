@@ -5,7 +5,7 @@
   },
   {
     "ParameterKey": "FunctionName",
-    "ParameterValue": "PR_capa_graph_analytics.py"
+    "ParameterValue": "PR_capa_graph_analytics"
   },
   {
     "ParameterKey": "Runtime",
