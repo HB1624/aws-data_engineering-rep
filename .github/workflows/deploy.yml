@@ -15,7 +15,7 @@ permissions:
 env:
   STACK_NAME: pipeline-pr-capa-analytics-main
   PARAMS_FILE: params.prod.json
-  TEMPLATE_FILE: template.yaml
+  TEMPLATE_FILE: template.yml
 
 jobs:
   deploy:
