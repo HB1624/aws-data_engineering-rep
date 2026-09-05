@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  One-time bootstrap: creates (or reuses) the GitHub OIDC identity provider
+  and an IAM role that GitHub Actions assumes to deploy the Lambda stack.
+  Deploy this ONCE manually (not from the pipeline) before the pipeline
+  can run.
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Description: GitHub org or username
+
+  GitHubRepo:
+    Type: String
+    Description: Repository name
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: >
+      Only this branch may assume the deploy role. Since dev/qa are
+      promotion-only branches with no deploy step, this should stay "main".
+
+  # Set to "true" only if this account has NEVER had the GitHub OIDC
+  # provider created before (one provider per AWS account, not per repo).
+  CreateOIDCProvider:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+
+  RoleName:
+    Type: String
+    Default: github-actions-lambda-deploy-role
+
+Conditions:
+  ShouldCreateProvider: !Equals [!Ref CreateOIDCProvider, "true"]
+
+Resources:
+
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        # GitHub's OIDC thumbprint (rotates rarely; AWS validates automatically now)
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+              StringLike:
+                "token.actions.githubusercontent.com:sub": !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}"
+      MaxSessionDuration: 3600
+      Policies:
+        - PolicyName: lambda-cfn-deploy-permissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # CloudFormation stack operations
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                Resource: "*"
+              # S3 artifact bucket access
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - "arn:aws:s3:::prtestrvw0011617capa"
+                  - "arn:aws:s3:::prtestrvw0011617capa/*"
+              # Lambda management
+              - Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:DeleteFunction
+                  - lambda:TagResource
+                  - lambda:ListTags
+                Resource: "*"
+              # IAM role management scoped to roles this stack creates
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PassRole
+                  - iam:TagRole
+                Resource: "arn:aws:iam::*:role/*-role"
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:DescribeLogGroups
+                  - logs:PutRetentionPolicy
+                  - logs:TagResource
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: >
+      Put this value in the GitHub repo secret AWS_DEPLOY_ROLE_ARN
+    Value: !GetAtt GitHubActionsDeployRole.Arn
